@@ -16,9 +16,13 @@ module Main
   main = do
     [fileName] <- getArgs
     segs <- readSegmentFile fileName
-    let newPair = emptyRefinementPair (Point (-1000) (-1000)) (Point 1000 1000)
+    let (min, max) = findMinMax segs
+        newPair = emptyRefinementPair min max
         result = foldl (rebuildRefinementPair) newPair segs
     putStrLn "Success"
+
+  findMinMax :: (Ord a) => [LineSegment a] -> (Point a, Point a)
+  findMinMax segs = undefined
 
   readSegment :: (Read a) => String -> LineSegment a
   readSegment str = let [p1, p2, p3, p4] = map (read) $ words str
