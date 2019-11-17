@@ -6,6 +6,8 @@ module
   , crossProduct
   , turn
   , above
+  , orient
+  , intersects
   )
 where
 
@@ -33,8 +35,22 @@ where
           cross = crossProduct qp rp
 
   boundingOverlap :: (Ord a) => BoundingBox a -> BoundingBox a -> Bool
-  boundingOverlap _ _ = undefined
+  boundingOverlap (BoundingBox (Point x1 y1) (Point x2 y2)) (BoundingBox (Point x3 y3) (Point x4 y4))
+    | (x2 >= x3 && x4 >= x1 && y2 >= y3 && y4 >= y1) = True
+    | otherwise                                      = False
 
   above :: (Ord a) => Point a -> Point a -> Bool
   above (Point _ ny) (Point _ qy) = if qy > ny then True else False
 
+  orient :: (Num a, Ord a) => Point a -> Point a -> Point a -> a
+  orient (Point x0 y0) (Point x1 y1) (Point x2 y2) = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0)
+
+  straddles :: (Num a, Ord a) => LineSegment a -> LineSegment a -> Bool
+  straddles (LineSegment p1 p2) (LineSegment p3 p4)
+    | orient p1 p2 p3 * orient p1 p2 p4 <= 0 = True
+    | otherwise                              = False
+
+  intersects :: (Num a, Ord a) => LineSegment a -> LineSegment a -> Bool
+  intersects (LineSegment p1 p2) (LineSegment p3 p4) = boundingOverlap (BoundingBox p1 p2) (BoundingBox p3 p4) 
+                                                    && straddles (LineSegment p1 p2) (LineSegment p3 p4) 
+                                                    && straddles (LineSegment p3 p4) (LineSegment p1 p2)

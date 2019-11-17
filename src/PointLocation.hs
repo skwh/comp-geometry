@@ -1,7 +1,8 @@
 module
   PointLocation
   (
-
+    emptyRefinementPair
+  , rebuildRefinementPair
   )
 where
   import Primitives
@@ -67,9 +68,12 @@ where
     where followSegment' []     q = undefined -- this should never happen
           followSegment' (t:ts) q = case xNodeTest (rightP t) q
                                       of DirRight -> if yNodeTest (bottom t) q == DirUp
-                                                     then t : followSegment' ((tm IntMap.! (fromJust (lowerRightNeighbor t))) : ts) q
-                                                     else t : followSegment' ((tm IntMap.! (fromJust (upperRightNeighbor t))) : ts) q
+                                                     then t : followSegment' ((neighboringTrapezoidFromMap DirDown tm t) : ts) q
+                                                     else t : followSegment' ((neighboringTrapezoidFromMap DirUp tm t) : ts) q
                                          DirLeft  -> (t:ts)
+          neighboringTrapezoidFromMap :: VerticalDirection -> TrapezoidMap a -> Trapezoid a -> Trapezoid a
+          neighboringTrapezoidFromMap DirUp   tm t = tm IntMap.! fromJust (upperRightNeighbor t)
+          neighboringTrapezoidFromMap DirDown tm t = tm IntMap.! fromJust (lowerRightNeighbor t)
 
   processTrapezoids :: (Ord a, Num a) => RefinementPair a -> [Trapezoid a] -> LineSegment a -> RefinementPair a
   processTrapezoids p [t] ls = bcts p t ls
@@ -79,42 +83,131 @@ where
                                                             ss' = (XNode p (LeafNode $ trapezoidId newTrapezoidLeft) 
                                                                            (YNode (LineSegment p q) 
                                                                                   (LeafNode $ trapezoidId newTrapezoidTop) (LeafNode $ trapezoidId newTrapezoidBottom)))
-                                                        in processLeftToRight (tm', appendAtTrapezoid ss ss' p) (newTrapezoidTop, newTrapezoidBottom) ts
-    where newIds = getNewIds tm 3
-          newTrapezoidLeft = Trapezoid { trapezoidId = head newIds
+                                                        in processLeftToRight (tm', appendAtTrapezoid ss ss' p) (LineSegment p q) (newTrapezoidTop, newTrapezoidBottom) ts
+    where [leftId, topId, bottomId] = getNewIds tm 3
+          newTrapezoidLeft = Trapezoid { trapezoidId = leftId
                                        , top = top t
                                        , bottom = bottom t
                                        , leftP = leftP t
                                        , rightP = p
                                        , upperLeftNeighbor = upperLeftNeighbor t
                                        , lowerLeftNeighbor = lowerLeftNeighbor t
-                                       , upperRightNeighbor = Just $ newIds !! 1
-                                       , lowerRightNeighbor = Just $ newIds !! 2
+                                       , upperRightNeighbor = Just topId
+                                       , lowerRightNeighbor = Just bottomId
                                        }
-          newTrapezoidTop = Trapezoid { trapezoidId = newIds !! 1
+          newTrapezoidTop = Trapezoid { trapezoidId = topId
                                       , top = top t
                                       , bottom = LineSegment p q
                                       , leftP = p
                                       , rightP = rightP t
-                                      , upperLeftNeighbor = Just $ head newIds
+                                      , upperLeftNeighbor = Just leftId
                                       , lowerLeftNeighbor = Nothing
                                       , upperRightNeighbor = upperRightNeighbor t
                                       , lowerRightNeighbor = Nothing 
                                       }
-          newTrapezoidBottom = Trapezoid { trapezoidId = newIds !! 2
+          newTrapezoidBottom = Trapezoid { trapezoidId = bottomId
                                          , top = LineSegment p q
                                          , bottom = bottom t
                                          , leftP = p
                                          , rightP = rightP t
                                          , upperLeftNeighbor = Nothing
-                                         , lowerLeftNeighbor = Just $ head newIds
+                                         , lowerLeftNeighbor = Just leftId
                                          , upperRightNeighbor = Nothing
                                          , lowerRightNeighbor = lowerRightNeighbor t
                                          }
 
-  processLeftToRight :: RefinementPair a -> (Trapezoid a, Trapezoid a) -> [Trapezoid a] -> RefinementPair a
-  processLeftToRight (tm, ss) (top, bottom) [t]    = undefined 
-  processLeftToRight (tm, ss) (top, bottom) (t:ts) = undefined
+  splitTrapezoid :: Trapezoid a -> TrapezoidMap a -> LineSegment a -> (Trapezoid a, Trapezoid a, TrapezoidMap a)
+  splitTrapezoid t tm (LineSegment p q) = let tm' = IntMap.delete (trapezoidId t) . IntMap.insert topId newTrapezoidTop .
+                                                                                    IntMap.insert bottomId newTrapezoidBottom $ tm
+                                          in (newTrapezoidTop, newTrapezoidBottom, tm')
+    where [topId, bottomId] = getNewIds tm 2
+          newTrapezoidTop = Trapezoid { trapezoidId = topId
+                                      , top = top t
+                                      , bottom = LineSegment p q
+                                      , leftP = leftP t
+                                      , rightP = rightP t
+                                      , upperLeftNeighbor = upperLeftNeighbor t
+                                      , lowerLeftNeighbor = Nothing
+                                      , upperRightNeighbor = upperRightNeighbor t
+                                      , lowerRightNeighbor = Nothing
+                                      }
+          newTrapezoidBottom = Trapezoid { trapezoidId = bottomId
+                                         , top = LineSegment p q
+                                         , bottom = bottom t
+                                         , leftP = leftP t
+                                         , rightP = rightP t
+                                         , upperLeftNeighbor = Nothing
+                                         , lowerLeftNeighbor = lowerLeftNeighbor t
+                                         , upperRightNeighbor = Nothing
+                                         , lowerRightNeighbor = lowerRightNeighbor t
+                                         }
+  
+  processLeftToRight :: (Eq a) => RefinementPair a -> LineSegment a -> (Trapezoid a, Trapezoid a) -> [Trapezoid a] -> RefinementPair a
+  processLeftToRight (tm, ss) (LineSegment p q) (topT, bottomT) [t] = let tm' = IntMap.delete (trapezoidId t) . IntMap.insert rightId newTrapezoidRight   .
+                                                                                                                IntMap.insert topId newTrapezoidTop       .
+                                                                                                                IntMap.insert bottomId newTrapezoidBottom $ tm
+                                                                      in (tm', ss)
+    where [topId, bottomId, rightId] = getNewIds tm 3
+          newTrapezoidTop = Trapezoid { trapezoidId = topId
+                                      , top = top t
+                                      , bottom = (LineSegment p q)
+                                      , leftP = leftP t
+                                      , rightP = rightP t
+                                      , upperLeftNeighbor = upperLeftNeighbor t
+                                      , lowerLeftNeighbor = Nothing
+                                      , upperRightNeighbor = upperRightNeighbor t
+                                      , lowerRightNeighbor = Nothing
+                                      }
+          newTrapezoidBottom = Trapezoid { trapezoidId = bottomId 
+                                         , top = (LineSegment p q)
+                                         , bottom = bottom t
+                                         , leftP = leftP t
+                                         , rightP = rightP t
+                                         , upperLeftNeighbor = Nothing
+                                         , lowerLeftNeighbor = lowerLeftNeighbor t
+                                         , upperRightNeighbor = Nothing
+                                         , lowerRightNeighbor = lowerRightNeighbor t
+                                         }
+          newTrapezoidRight = Trapezoid { trapezoidId = rightId
+                                        , top = top t
+                                        , bottom = bottom t
+                                        , leftP = q
+                                        , rightP = rightP t
+                                        , upperLeftNeighbor = Just topId
+                                        , lowerLeftNeighbor = Just bottomId
+                                        , upperRightNeighbor = upperRightNeighbor t
+                                        , lowerRightNeighbor = lowerRightNeighbor t
+                                        }
+  processLeftToRight (tm, ss) l (topT, bottomT) (t:ts) = let (nt, nb, tm') = splitTrapezoid t tm l
+                                                             tm'' = mergeTop topT nt tm'
+                                                             tm''' = mergeBottom bottomT nb tm''
+                                                         in processLeftToRight (tm''', ss) l (nt, nb) ts
+    where mergeTop pTop nTop tm = if top pTop == top nTop
+                                  then IntMap.delete (trapezoidId nTop) . IntMap.adjust (\x -> modifiedTopTrapezoid) (trapezoidId pTop) $ tm
+                                  else tm
+            where modifiedTopTrapezoid = Trapezoid { trapezoidId = trapezoidId pTop
+                                                   , top = top pTop
+                                                   , bottom = l
+                                                   , leftP = leftP pTop
+                                                   , rightP = rightP nTop
+                                                   , upperLeftNeighbor = upperLeftNeighbor pTop
+                                                   , lowerLeftNeighbor = lowerLeftNeighbor pTop
+                                                   , upperRightNeighbor = upperRightNeighbor nTop
+                                                   , lowerRightNeighbor = lowerRightNeighbor nTop
+                                                   }
+          mergeBottom pBot nBot tm = if bottom pBot == bottom nBot
+                                     then IntMap.delete (trapezoidId nBot) . IntMap.adjust (\x -> modifiedBottomTrapezoid) (trapezoidId pBot) $ tm
+                                     else tm
+            where modifiedBottomTrapezoid = Trapezoid { trapezoidId = trapezoidId pBot
+                                                      , top = l
+                                                      , bottom = bottom pBot
+                                                      , leftP = leftP pBot
+                                                      , rightP = rightP nBot
+                                                      , upperLeftNeighbor = upperLeftNeighbor pBot
+                                                      , lowerLeftNeighbor = lowerLeftNeighbor pBot
+                                                      , upperRightNeighbor = upperRightNeighbor nBot
+                                                      , lowerRightNeighbor = lowerRightNeighbor nBot
+                                                      }
 
   bcts :: (Ord a, Num a) => RefinementPair a -> Trapezoid a -> LineSegment a -> RefinementPair a
   bcts (tm, ss) t (LineSegment p q) = let ss' = (XNode p (LeafNode $ trapezoidId newTrapezoidA) 
@@ -126,46 +219,46 @@ where
                                                                                 IntMap.insert (trapezoidId newTrapezoidC) newTrapezoidC . 
                                                                                 IntMap.insert (trapezoidId newTrapezoidD) newTrapezoidD $ tm
                                       in (tm', appendAtTrapezoid ss ss' p)
-    where newIds = getNewIds tm 4
-          newTrapezoidA = Trapezoid { trapezoidId = head newIds
+    where [aId, bId, cId, dId] = getNewIds tm 4
+          newTrapezoidA = Trapezoid { trapezoidId = aId
                                     , top = top t
                                     , bottom = bottom t
                                     , leftP = leftP t
                                     , rightP = p
                                     , upperLeftNeighbor = upperLeftNeighbor t
                                     , lowerLeftNeighbor = lowerLeftNeighbor t
-                                    , upperRightNeighbor = Just $ newIds !! 2
-                                    , lowerRightNeighbor = Just $ newIds !! 3
+                                    , upperRightNeighbor = Just cId
+                                    , lowerRightNeighbor = Just dId
                                     }
-          newTrapezoidB = Trapezoid { trapezoidId = newIds !! 1
+          newTrapezoidB = Trapezoid { trapezoidId = bId
                                     , top = top t
                                     , bottom = bottom t
                                     , leftP = q
                                     , rightP = rightP t
-                                    , upperLeftNeighbor = Just $ newIds !! 2
-                                    , lowerLeftNeighbor = Just $ newIds !! 3
+                                    , upperLeftNeighbor = Just cId
+                                    , lowerLeftNeighbor = Just dId
                                     , upperRightNeighbor = upperRightNeighbor t
                                     , lowerRightNeighbor = lowerRightNeighbor t
                                     }
-          newTrapezoidC = Trapezoid { trapezoidId = newIds !! 2
+          newTrapezoidC = Trapezoid { trapezoidId = cId
                                     , top = top t
                                     , bottom = LineSegment p q
                                     , leftP = p
                                     , rightP = q
-                                    , upperLeftNeighbor = Just $ head newIds
+                                    , upperLeftNeighbor = Just aId
                                     , lowerLeftNeighbor = Nothing
-                                    , upperRightNeighbor = Just $ newIds !! 1
+                                    , upperRightNeighbor = Just bId
                                     , lowerRightNeighbor = Nothing
                                     }
-          newTrapezoidD = Trapezoid { trapezoidId = newIds !! 3
+          newTrapezoidD = Trapezoid { trapezoidId = dId
                                     , top = LineSegment p q
                                     , bottom = bottom t
                                     , leftP = p
                                     , rightP = q
                                     , upperLeftNeighbor = Nothing
-                                    , lowerLeftNeighbor = Just $ head newIds
+                                    , lowerLeftNeighbor = Just aId
                                     , upperRightNeighbor = Nothing
-                                    , lowerRightNeighbor = Just $ newIds !! 1
+                                    , lowerRightNeighbor = Just bId
                                     }
 
   -- Is the query point to the left or to the right of the given point?
