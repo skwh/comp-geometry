@@ -15,7 +15,7 @@ where
 
   data TurnType = TurnLeft | TurnRight | NoTurn deriving (Eq, Show)
 
-  data Point a = Point { px :: a, py :: a } deriving (Eq, Ord, Show)
+  data Point a = Point { px :: a, py :: a } deriving (Eq, Ord, Show, Read)
   data Vector a = Vector { vx :: a, vy :: a } deriving (Eq, Show)
   data Line x = Line { a :: x , b :: x, c :: x } deriving (Eq, Show)
   data LineSegment x = LineSegment { p1 :: Point x , p2 :: Point x } deriving (Eq, Show)

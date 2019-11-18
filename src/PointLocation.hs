@@ -3,6 +3,8 @@ module
   (
     emptyRefinementPair
   , rebuildRefinementPair
+  , doQuery
+  , RefinementPair (..)
   )
 where
   import Primitives
@@ -72,8 +74,8 @@ where
                                                      else t : followSegment' ((neighboringTrapezoidFromMap DirUp tm t) : ts) q
                                          DirLeft  -> (t:ts)
           neighboringTrapezoidFromMap :: VerticalDirection -> TrapezoidMap a -> Trapezoid a -> Trapezoid a
-          neighboringTrapezoidFromMap DirUp   tm t = tm IntMap.! fromJust (upperRightNeighbor t)
-          neighboringTrapezoidFromMap DirDown tm t = tm IntMap.! fromJust (lowerRightNeighbor t)
+          neighboringTrapezoidFromMap DirUp   tm t = tm IntMap.! fromJust (upperRightNeighbor t) -- Errors are being raised here bcause these trapezoids do not exist in the map
+          neighboringTrapezoidFromMap DirDown tm t = tm IntMap.! fromJust (lowerRightNeighbor t) -- Or, because a trapezoid does not have a neighbor when it should. This is a reassignment issue
 
   processTrapezoids :: (Ord a, Num a) => RefinementPair a -> [Trapezoid a] -> LineSegment a -> RefinementPair a
   processTrapezoids p [t] ls = bcts p t ls
@@ -146,7 +148,7 @@ where
   processLeftToRight (tm, ss) (LineSegment p q) (topT, bottomT) [t] = let tm' = IntMap.delete (trapezoidId t) . IntMap.insert rightId newTrapezoidRight   .
                                                                                                                 IntMap.insert topId newTrapezoidTop       .
                                                                                                                 IntMap.insert bottomId newTrapezoidBottom $ tm
-                                                                      in (tm', ss)
+                                                                      in (tm', ss) -- issue: Search Structure is not updated
     where [topId, bottomId, rightId] = getNewIds tm 3
           newTrapezoidTop = Trapezoid { trapezoidId = topId
                                       , top = top t
@@ -181,7 +183,7 @@ where
   processLeftToRight (tm, ss) l (topT, bottomT) (t:ts) = let (nt, nb, tm') = splitTrapezoid t tm l
                                                              tm'' = mergeTop topT nt tm'
                                                              tm''' = mergeBottom bottomT nb tm''
-                                                         in processLeftToRight (tm''', ss) l (nt, nb) ts
+                                                         in processLeftToRight (tm''', ss) l (nt, nb) ts -- issue: search Structure is not updated
     where mergeTop pTop nTop tm = if top pTop == top nTop
                                   then IntMap.delete (trapezoidId nTop) . IntMap.adjust (\x -> modifiedTopTrapezoid) (trapezoidId pTop) $ tm
                                   else tm
@@ -297,3 +299,5 @@ where
                                                   else queryStructure ssb q
                              (LeafNode t)      -> t
 
+  doQuery :: (Ord a, Num a) => RefinementPair a -> Point a -> Maybe (Trapezoid a)
+  doQuery (tm, ss) p = (queryStructure ss p) `IntMap.lookup` tm

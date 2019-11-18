@@ -2,10 +2,11 @@ module
   Generator
   (
     randomNonIntersectingSegments
+  , checkIntersectsAny
   )
 where
-  import Primitives
-  import Predicates
+  import Primitives (LineSegment (..), Point (..))
+  import Predicates (intersects)
 
   import System.Random
 
@@ -21,8 +22,9 @@ where
   randomSegments 0 max gen = []
   randomSegments num max gen = (randomSegment max gen) : (randomSegments (num-1) max $ fst . split $ gen)
 
-  checkIntersectsAny :: (Num a, Ord a, Random a) => LineSegment a -> [LineSegment a] -> Bool
+  checkIntersectsAny :: (Num a, Ord a) => LineSegment a -> [LineSegment a] -> Bool
   checkIntersectsAny l ls = foldl (||) False $ map (intersects l) ls
+
 
   makeNonIntersectingSegment :: (Num a, Ord a, Random a) => a -> StdGen -> [LineSegment a] -> LineSegment a
   makeNonIntersectingSegment max gen ls = let segment = randomSegment max gen
@@ -35,5 +37,4 @@ where
     where makeSegments' prev 0 max gen = [makeNonIntersectingSegment max gen prev]
           makeSegments' prev num max gen = let seg = makeNonIntersectingSegment max gen prev
                                            in (seg : makeSegments' (seg:prev) (num-1) max (fst . split $ gen))
-  
 
