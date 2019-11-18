@@ -90,9 +90,11 @@ where
   emptyRefinementPair min max = let tm = emptyTrapezoidMap min max
                                 in  (tm, emptySearchStructure tm)
 
+  -- insert a segment into the map and search structure
   rebuildRefinementPair :: (Ord a, Num a) => RefinementPair a -> LineSegment a -> RefinementPair a
   rebuildRefinementPair rp ls = processTrapezoids rp (followSegment rp ls) ls
 
+  -- Determine which trapezoids lie along a segment
   followSegment :: (Ord a, Num a) => RefinementPair a -> LineSegment a -> [Trapezoid a]
   followSegment (tm, ss) (LineSegment p q) = followSegment' [tm IntMap.! queryStructure ss p] q
     where followSegment' []     q = undefined -- this should never happen
@@ -106,7 +108,9 @@ where
           neighboringTrapezoidFromMap DirDown tm t = tm IntMap.! fromJust (lowerRightNeighbor t) -- Or, because a trapezoid does not have a neighbor when it should. This is a reassignment issue
 
   processTrapezoids :: (Ord a, Num a) => RefinementPair a -> [Trapezoid a] -> LineSegment a -> RefinementPair a
+  -- Case: trapezoid entirely contains the segment
   processTrapezoids p [t] ls = bcts p t ls
+  -- Case: left endpoint
   processTrapezoids (tm, ss) (t:ts) (LineSegment p q) = let tm' = scanAndReassign (trapezoidId t) leftId . IntMap.insert leftId newTrapezoidLeft .
                                                                                                            IntMap.insert topId newTrapezoidTop   .
                                                                                                            IntMap.insert bottomId newTrapezoidBottom $ tm
@@ -146,9 +150,10 @@ where
                                          , lowerRightNeighbor = lowerRightNeighbor t
                                          }
 
+  -- Split a trapezoid along a given line segment
   splitTrapezoid :: Trapezoid a -> TrapezoidMap a -> LineSegment a -> (Trapezoid a, Trapezoid a, TrapezoidMap a)
-  splitTrapezoid t tm (LineSegment p q) = let tm' = IntMap.delete (trapezoidId t) . IntMap.insert topId newTrapezoidTop .
-                                                                                    IntMap.insert bottomId newTrapezoidBottom $ tm
+  splitTrapezoid t tm (LineSegment p q) = let tm' = scanAndReassign (trapezoidId t) topId . IntMap.insert topId newTrapezoidTop .
+                                                                                            IntMap.insert bottomId newTrapezoidBottom $ tm
                                           in (newTrapezoidTop, newTrapezoidBottom, tm')
     where [topId, bottomId] = getNewIds tm 2
           newTrapezoidTop = Trapezoid { trapezoidId = topId
@@ -172,11 +177,15 @@ where
                                          , lowerRightNeighbor = lowerRightNeighbor t
                                          }
   
-  processLeftToRight :: (Eq a) => RefinementPair a -> LineSegment a -> (Trapezoid a, Trapezoid a) -> [Trapezoid a] -> RefinementPair a
-  processLeftToRight (tm, ss) (LineSegment p q) (topT, bottomT) [t] = let tm' = IntMap.delete (trapezoidId t) . IntMap.insert rightId newTrapezoidRight   .
-                                                                                                                IntMap.insert topId newTrapezoidTop       .
-                                                                                                                IntMap.insert bottomId newTrapezoidBottom $ tm
-                                                                      in (tm', ss) -- issue: Search Structure is not updated
+  processLeftToRight :: (Eq a, Ord a, Num a) => RefinementPair a -> LineSegment a -> (Trapezoid a, Trapezoid a) -> [Trapezoid a] -> RefinementPair a
+  -- Case: Right endpoint
+  processLeftToRight (tm, ss) (LineSegment p q) (topT, bottomT) [t] = let tm' = scanAndReassign (trapezoidId t) rightId . IntMap.insert rightId newTrapezoidRight   .
+                                                                                                                          IntMap.insert topId newTrapezoidTop       .
+                                                                                                                          IntMap.insert bottomId newTrapezoidBottom $ tm
+                                                                          ss' = (XNode q (YNode (LineSegment p q) 
+                                                                                                (LeafNode (trapezoidId newTrapezoidTop)) (LeafNode (trapezoidId newTrapezoidBottom))) 
+                                                                                          (LeafNode (trapezoidId newTrapezoidRight)))
+                                                                      in (tm', appendAtTrapezoid ss ss' q) 
     where [topId, bottomId, rightId] = getNewIds tm 3
           newTrapezoidTop = Trapezoid { trapezoidId = topId
                                       , top = top t
@@ -208,16 +217,18 @@ where
                                         , upperRightNeighbor = upperRightNeighbor t
                                         , lowerRightNeighbor = lowerRightNeighbor t
                                         }
-  processLeftToRight (tm, ss) l (topT, bottomT) (t:ts) = let (nt, nb, tm') = splitTrapezoid t tm l
-                                                             tm'' = mergeTop topT nt tm'
-                                                             tm''' = mergeBottom bottomT nb tm''
-                                                         in processLeftToRight (tm''', ss) l (nt, nb) ts -- issue: search Structure is not updated
+  -- Case: middle trapezoids
+  processLeftToRight (tm, ss) (LineSegment p q) (topT, bottomT) (t:ts) = let (nt, nb, tm') = splitTrapezoid t tm (LineSegment p q)
+                                                                             tm'' = mergeTop topT nt tm'
+                                                                             tm''' = mergeBottom bottomT nb tm''
+                                                                             ss' = (YNode (LineSegment p q) (LeafNode (trapezoidId nt)) (LeafNode (trapezoidId nb)))
+                                                                         in processLeftToRight (tm''', appendAtTrapezoid ss ss' (leftP nt)) (LineSegment p q) (nt, nb) ts 
     where mergeTop pTop nTop tm = if top pTop == top nTop
                                   then IntMap.delete (trapezoidId nTop) . IntMap.adjust (\x -> modifiedTopTrapezoid) (trapezoidId pTop) $ tm
                                   else tm
             where modifiedTopTrapezoid = Trapezoid { trapezoidId = trapezoidId pTop
                                                    , top = top pTop
-                                                   , bottom = l
+                                                   , bottom = (LineSegment p q)
                                                    , leftP = leftP pTop
                                                    , rightP = rightP nTop
                                                    , upperLeftNeighbor = upperLeftNeighbor pTop
@@ -229,7 +240,7 @@ where
                                      then IntMap.delete (trapezoidId nBot) . IntMap.adjust (\x -> modifiedBottomTrapezoid) (trapezoidId pBot) $ tm
                                      else tm
             where modifiedBottomTrapezoid = Trapezoid { trapezoidId = trapezoidId pBot
-                                                      , top = l
+                                                      , top = (LineSegment p q)
                                                       , bottom = bottom pBot
                                                       , leftP = leftP pBot
                                                       , rightP = rightP nBot
@@ -239,6 +250,7 @@ where
                                                       , lowerRightNeighbor = lowerRightNeighbor nBot
                                                       }
 
+  -- Break Containing Trapezoid Segment: case when a trapezoid completely contains a segment
   bcts :: (Ord a, Num a) => RefinementPair a -> Trapezoid a -> LineSegment a -> RefinementPair a
   bcts (tm, ss) t (LineSegment p q) = let ss' = (XNode p (LeafNode $ trapezoidId newTrapezoidA) 
                                                           (XNode q (YNode (LineSegment p q) 
