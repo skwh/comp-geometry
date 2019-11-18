@@ -37,6 +37,34 @@ where
   getNewIds tm count = let max = getNewestMaxId tm
                         in map (+max) [1..count]
 
+  scanAndReassign :: Int -> Int -> TrapezoidMap a -> TrapezoidMap a
+  scanAndReassign old new tm = IntMap.delete old . reassign old new $ tm
+    where reassign :: Int -> Int -> TrapezoidMap a -> TrapezoidMap a
+          reassign old new tm = IntMap.map (\x -> updateUpperLeftNeighborField x old new) .
+                                IntMap.map (\x -> updateLowerLeftNeighborField x old new) .
+                                IntMap.map (\x -> updateUpperRightNeighborField x old new) .
+                                IntMap.map (\x -> updateLowerRightNeighborField x old new) $ tm
+
+  updateUpperLeftNeighborField :: Trapezoid a -> IntMap.Key -> IntMap.Key -> Trapezoid a
+  updateUpperLeftNeighborField t ok nk = if upperLeftNeighbor t == Just ok
+                                           then t { upperLeftNeighbor = Just nk }
+                                           else t 
+
+  updateLowerLeftNeighborField :: Trapezoid a -> IntMap.Key -> IntMap.Key -> Trapezoid a
+  updateLowerLeftNeighborField t ok nk = if lowerLeftNeighbor t == Just ok
+                                           then t { lowerLeftNeighbor = Just nk }
+                                           else t 
+
+  updateUpperRightNeighborField :: Trapezoid a -> IntMap.Key -> IntMap.Key -> Trapezoid a
+  updateUpperRightNeighborField t ok nk = if upperRightNeighbor t == Just ok
+                                           then t { upperRightNeighbor = Just nk }
+                                           else t 
+
+  updateLowerRightNeighborField :: Trapezoid a -> IntMap.Key -> IntMap.Key -> Trapezoid a
+  updateLowerRightNeighborField t ok nk = if lowerRightNeighbor t == Just ok
+                                           then t { lowerRightNeighbor = Just nk }
+                                           else t 
+
   emptyTrapezoidMap :: Point a -> Point a -> TrapezoidMap a
   emptyTrapezoidMap (Point minx miny) (Point maxx maxy) = IntMap.singleton 0 Trapezoid { trapezoidId = 0
                                                                                        , top = LineSegment (Point minx maxy) (Point maxx maxy)
@@ -79,9 +107,9 @@ where
 
   processTrapezoids :: (Ord a, Num a) => RefinementPair a -> [Trapezoid a] -> LineSegment a -> RefinementPair a
   processTrapezoids p [t] ls = bcts p t ls
-  processTrapezoids (tm, ss) (t:ts) (LineSegment p q) = let tm' = IntMap.delete (trapezoidId t) . IntMap.insert (trapezoidId newTrapezoidLeft) newTrapezoidLeft .
-                                                                                                  IntMap.insert (trapezoidId newTrapezoidTop) newTrapezoidTop   .
-                                                                                                  IntMap.insert (trapezoidId newTrapezoidBottom) newTrapezoidBottom $ tm
+  processTrapezoids (tm, ss) (t:ts) (LineSegment p q) = let tm' = scanAndReassign (trapezoidId t) leftId . IntMap.insert leftId newTrapezoidLeft .
+                                                                                                           IntMap.insert topId newTrapezoidTop   .
+                                                                                                           IntMap.insert bottomId newTrapezoidBottom $ tm
                                                             ss' = (XNode p (LeafNode $ trapezoidId newTrapezoidLeft) 
                                                                            (YNode (LineSegment p q) 
                                                                                   (LeafNode $ trapezoidId newTrapezoidTop) (LeafNode $ trapezoidId newTrapezoidBottom)))
